@@ -86,9 +86,25 @@ const chatIO = new Server(chatServer, {
     }
 });
 
+// Array para mantener un registro de los usuarios conectados con sus IDs de socket y nombres.
+const connectedUsers: { id: string, username: string }[] = [];
+
 // Manejar conexiones de Socket.IO para el chat
 chatIO.on('connection', (socket) => {
     console.log(`Usuario conectado al chat: ${socket.id}`);
+
+    // Extraer el nombre de usuario del handshake (si se envía desde el frontend)
+    const username = (socket.handshake.query.username as string) || `User-${socket.id.substring(0, 5)}`;
+    connectedUsers.push({ id: socket.id, username });
+
+    // Enviar mensaje de bienvenida global a todos los usuarios
+    const welcomeMessage: ChatMessage = {
+        room: "general", // Usamos una sala "general" para anuncios
+        author: "Server",
+        message: `${username} has connected!`,
+        time: new Date().toLocaleTimeString(),
+    };
+    chatIO.emit("receive_message", welcomeMessage); // Emite a todos los clientes conectados
 
     // Verificación JWT para el socket principal
     socket.use(([event, ...args], next) => {
@@ -127,6 +143,22 @@ chatIO.on('connection', (socket) => {
     // Manejar desconexión
     socket.on('disconnect', () => {
         console.log(`Usuario desconectado del chat: ${socket.id}`);
+        // Encontrar y eliminar al usuario desconectado de la lista
+        const disconnectedUserIndex = connectedUsers.findIndex(user => user.id === socket.id);
+        let disconnectedUsername = `User-${socket.id.substring(0, 5)}`;
+        if (disconnectedUserIndex !== -1) {
+            disconnectedUsername = connectedUsers[disconnectedUserIndex].username;
+            connectedUsers.splice(disconnectedUserIndex, 1);
+        }
+
+        // Emitir mensaje de desconexión global a todos los usuarios restantes
+        const disconnectMessage: ChatMessage = {
+            room: "general",
+            author: "Server",
+            message: `${disconnectedUsername} has disconnected.`,
+            time: new Date().toLocaleTimeString(),
+        };
+        chatIO.emit("receive_message", disconnectMessage);
     });
 });
 
